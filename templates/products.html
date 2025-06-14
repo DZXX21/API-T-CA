@@ -324,7 +324,9 @@
     <div class="container">
         <div class="header">
             <h1>WooCommerce Ürün Yönetim Paneli</h1>
-            <div style="margin-top: 10px;">
+            <div style="margin-top: 10px; display: flex; gap: 15px; align-items: center;">
+                <a href="{{ url_for('list_products') }}" style="color: white; text-decoration: none; padding: 8px 16px; background: #007bff; border-radius: 4px;">📊 Ürünler</a>
+                <a href="{{ url_for('list_orders') }}" style="color: white; text-decoration: none; padding: 8px 16px; background: #28a745; border-radius: 4px;">📦 Siparişler</a>
                 <span style="color: #ccc; font-size: 14px;">Hoş geldin, {{ session.username }}!</span>
                 <a href="{{ url_for('logout') }}" style="color: #ff6b6b; text-decoration: none; margin-left: 15px; font-size: 14px;">🚪 Çıkış</a>
             </div>

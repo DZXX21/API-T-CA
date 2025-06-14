@@ -19,7 +19,7 @@ LOG_FILE = "sales_log.json"
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "root")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "dzX81st!")
 
-# Login kontrolü decorator
+# Login kontrolü decorator - EN BAŞTA TANIMLA
 def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'logged_in' not in session:
@@ -67,6 +67,27 @@ def get_all_products():
             break
     
     return all_products
+
+# Tüm siparişleri çek (pagination ile)
+def get_all_orders():
+    all_orders = []
+    page = 1
+    per_page = 100
+    
+    while True:
+        url = f"{WC_STORE_URL}/wp-json/wc/v3/orders?per_page={per_page}&page={page}"
+        response = requests.get(url, auth=HTTPBasicAuth(WC_CONSUMER_KEY, WC_CONSUMER_SECRET))
+        
+        if response.status_code == 200:
+            orders = response.json()
+            if not orders:  # Eğer boş liste gelirse dur
+                break
+            all_orders.extend(orders)
+            page += 1
+        else:
+            break
+    
+    return all_orders
 
 # Login sayfası
 @app.route("/login", methods=["GET", "POST"])
@@ -135,6 +156,47 @@ def list_products():
         flash("❌ Ürünler alınamadı!")
         return redirect("/")
 
+# Siparişler sayfası
+@app.route("/orders")
+@login_required
+def list_orders():
+    orders = get_all_orders()
+    
+    if orders:
+        # Siparişleri tarihe göre sırala (en yeni en üstte)
+        orders.sort(key=lambda x: x.get('date_created', ''), reverse=True)
+        
+        # İstatistikleri hesapla
+        total_orders = len(orders)
+        pending_orders = len([o for o in orders if o.get('status') == 'pending'])
+        processing_orders = len([o for o in orders if o.get('status') == 'processing'])
+        completed_orders = len([o for o in orders if o.get('status') == 'completed'])
+        cancelled_orders = len([o for o in orders if o.get('status') == 'cancelled'])
+        
+        # Toplam satış tutarı
+        total_sales_amount = sum(float(o.get('total', 0)) for o in orders if o.get('status') in ['completed', 'processing'])
+        
+        # Bugünün siparişleri
+        today_str = date.today().strftime("%Y-%m-%d")
+        today_orders = [o for o in orders if o.get('date_created', '').startswith(today_str)]
+        today_orders_count = len(today_orders)
+        today_sales_amount = sum(float(o.get('total', 0)) for o in today_orders)
+
+        return render_template("orders.html",
+            orders=orders[:50],  # İlk 50 siparişi göster
+            total_orders=total_orders,
+            pending_orders=pending_orders,
+            processing_orders=processing_orders,
+            completed_orders=completed_orders,
+            cancelled_orders=cancelled_orders,
+            total_sales_amount=total_sales_amount,
+            today_orders_count=today_orders_count,
+            today_sales_amount=today_sales_amount
+        )
+    else:
+        flash("❌ Siparişler alınamadı!")
+        return redirect(url_for('list_products'))
+
 # Ürünü satıldı olarak işaretle (quantity ile)
 @app.route("/mark_sold/<int:product_id>")
 @login_required
@@ -195,6 +257,24 @@ def update_stock():
     else:
         flash("❌ Hata: " + response.text)
     return redirect(url_for('list_products'))
+
+# Sipariş durumunu güncelle
+@app.route("/update_order_status", methods=["POST"])
+@login_required
+def update_order_status():
+    order_id = request.form.get("order_id")
+    new_status = request.form.get("status")
+
+    url = f"{WC_STORE_URL}/wp-json/wc/v3/orders/{order_id}"
+    data = {"status": new_status}
+
+    response = requests.put(url, auth=HTTPBasicAuth(WC_CONSUMER_KEY, WC_CONSUMER_SECRET), json=data)
+
+    if response.status_code == 200:
+        flash(f"✅ Sipariş #{order_id} durumu '{new_status}' olarak güncellendi.")
+    else:
+        flash("❌ Hata: " + response.text)
+    return redirect(url_for('list_orders'))
 
 @app.route("/")
 def index():
