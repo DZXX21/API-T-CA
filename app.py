@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, flash, url_for
+from flask import Flask, render_template, request, redirect, flash, url_for, session
 from dotenv import load_dotenv
 import os
 import requests
@@ -14,6 +14,19 @@ WC_STORE_URL = os.getenv("WC_STORE_URL")
 WC_CONSUMER_KEY = os.getenv("WC_CONSUMER_KEY")
 WC_CONSUMER_SECRET = os.getenv("WC_CONSUMER_SECRET")
 LOG_FILE = "sales_log.json"
+
+# Admin kullanıcı bilgileri (şifreyi .env dosyasından al)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "root")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "dzX81st!")
+
+# Login kontrolü decorator
+def login_required(f):
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
 
 # Satış loguna ekle
 def log_sale(product_id, product_name, quantity, price, total_amount):
@@ -55,8 +68,33 @@ def get_all_products():
     
     return all_products
 
+# Login sayfası
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            session['username'] = username
+            flash("✅ Başarılı giriş!")
+            return redirect(url_for('list_products'))
+        else:
+            flash("❌ Kullanıcı adı veya şifre hatalı!")
+    
+    return render_template("login.html")
+
+# Çıkış
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("👋 Çıkış yapıldı!")
+    return redirect(url_for('login'))
+
 # WooCommerce API'den ürünleri çek
 @app.route("/products")
+@login_required
 def list_products():
     products = get_all_products()
     
@@ -99,6 +137,7 @@ def list_products():
 
 # Ürünü satıldı olarak işaretle (quantity ile)
 @app.route("/mark_sold/<int:product_id>")
+@login_required
 def mark_sold(product_id):
     quantity = int(request.args.get('quantity', 1))  # Frontend'den gelen miktar
     
@@ -141,6 +180,7 @@ def mark_sold(product_id):
 
 # Ürün stoğunu güncelle
 @app.route("/update_stock", methods=["POST"])
+@login_required
 def update_stock():
     product_id = request.form.get("product_id")
     stock_quantity = request.form.get("stock_quantity")
@@ -158,7 +198,9 @@ def update_stock():
 
 @app.route("/")
 def index():
-    return redirect(url_for('list_products'))
+    if 'logged_in' in session:
+        return redirect(url_for('list_products'))
+    return redirect(url_for('login'))
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=8082)
